@@ -1,0 +1,8 @@
+bcrypt
+Flask-BasicAuth
+Flask-Cors
+Flask-Migrate
+jsonschema
+pyfcm
+pytz
+requests
