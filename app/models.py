@@ -131,9 +131,9 @@ class User(db.Model, DeleteMixin, CommitMixin, HistoryMixin, UtcCreatedMixin):
     notifications = db.relationship('Notification', back_populates='user')
     reviews = db.relationship('Review', back_populates='user', cascade="all, delete-orphan")
     rooms = db.relationship('Room', back_populates='user', cascade="all, delete-orphan")
-    block_lists_subject = db.relationship('BlockLo', back_populates='subject', cascade="all, delete-orphan",
+    block_lists_subject = db.relationship('BlockList', back_populates='subject', cascade="all, delete-orphan",
                                           foreign_keys='[BlockList.subject_id]')
-    block_lists_object = db.relationship('BlockLo', back_populates='object_', cascade="all, delete-orphan",
+    block_lists_object = db.relationship('BlockList', back_populates='object_', cascade="all, delete-orphan",
                                          foreign_keys='[BlockList.object_id]')
     rents = db.relationship('Rent', back_populates='user', cascade="all, delete-orphan", lazy='dynamic')
 
@@ -147,8 +147,8 @@ class BlockList(db.Model, SyntheticKeyMixin, DeleteMixin, CommitMixin, HistoryMi
     object_id = db.Column(db.Integer, db.ForeignKey(User.pk), nullable=False)
     subject_id = db.Column(db.Integer, db.ForeignKey(User.pk), nullable=False)
 
-    object_ = db.relationship('User', back_populates='block_lists_object')
-    subject = db.relationship('User', back_populates='block_lists_subject')
+    object_ = db.relationship('User', back_populates='block_lists_object',foreign_keys=[object_id])
+    subject = db.relationship('User', back_populates='block_lists_subject',foreign_keys=[subject_id])
 
 
 class Token(db.Model, SyntheticKeyMixin, DeleteMixin, CommitMixin, HistoryMixin, ):
@@ -267,7 +267,7 @@ class Room(db.Model, SyntheticKeyMixin, DeleteMixin, CommitMixin, HistoryMixin, 
 
     user_id = db.Column(db.Integer, db.ForeignKey(User.pk), nullable=False)
 
-    user = db.relationship(User, back_populates='rooms', cascade="all, delete-orphan")
+    user = db.relationship(User, back_populates='rooms')
     room_amenities = db.relationship('RoomAmenity', back_populates='room', cascade="all, delete-orphan")
     attachments = db.relationship('Attachment', back_populates='room', cascade="all, delete-orphan")
     rents = db.relationship('Rent', back_populates='room', cascade="all, delete-orphan", lazy='dynamic')
@@ -317,10 +317,11 @@ class Rent(db.Model, SyntheticKeyMixin, DeleteMixin, CommitMixin, HistoryMixin, 
     end_at = db.Column(db.DateTime,nullable=False)
     room_id = db.Column(db.Integer, db.ForeignKey(Room.pk), nullable=False)
     user_id = db.Column(db.Integer, db.ForeignKey(User.pk), nullable=False)
+    verified = db.Column(db.Boolean, nullable=True)
 
     room = db.relationship(Room, back_populates='rents')
     user = db.relationship(User, back_populates='rents')
-    room_renters = db.relationship('RoomRenter', back_populates='room', cascade="all, delete-orphan")
+    room_renters = db.relationship('RoomRenter', back_populates='rent', cascade="all, delete-orphan")
     reviews = db.relationship('Review', back_populates='rent', cascade="all, delete-orphan", lazy='dynamic')
 
 

@@ -519,3 +519,34 @@ def create_room():
             'attachments': _array(items=_int()),
         }
     )
+
+
+def rent_room():
+    return _obj(
+        required_properties={
+            'comment': _nullable(_str()),
+            'start_at': _int(),
+            'end_at': _int(),
+            'renters': _array(
+                items=_obj(
+                    required_properties={
+                        'grown_ups_count': _int(),
+                        'children_count': _int()
+                    }
+                )
+            )
+        },
+        optional_properties={
+            'first_name': _nullable(_str()),
+            'last_name': _nullable(_str()),
+            'tel': _str()
+        }
+    )
+
+
+def edit_rent():
+    return _obj(
+        required_properties={
+            'verified': _bool()
+        }
+    )

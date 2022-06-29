@@ -15,7 +15,7 @@ from greensms.client import GreenSMS
 
 from app import app, schemas, request_validator, db
 from app.models import Token, TokenPair, Device, User, Notification, Code, UserType, Attachment, Room, RoomAmenity, \
-    Amenity
+    Amenity, Rent, RoomRenter
 from utils.auth import auth
 from utils.auth import gen_token
 from utils.helpers import make_response
@@ -694,6 +694,196 @@ def create_room():
             ],
             'attachments': [
                 att.link for att in room.attachments
+            ]
+        }
+    )
+
+
+@app.route('/rooms/<int:room_id>/rents/', methods=['POST'])
+@auth(user_types=[UserType.renter])
+@for_request(
+    allowed_content_types=json_mt,
+    body_fields=schemas.rent_room()
+)
+def rent_room(room_id):
+    room = Room.query.get(room_id)
+    if room is None:
+        return make_response(
+            status=404,
+            errors=[
+                {
+                    'code': 2,
+                    'message': 'Entity not found',
+                    'source': 'pk',
+                    'path': '$.url',
+                    'additional': None
+                }
+            ],
+            description='Комната не найдена'
+        )
+
+    body = g.received.body
+
+    rent = Rent()
+    rent.room = room
+    rent.user = g.user
+    rent.comment = body.comment
+    rent.start_at = _dt(body.start_at)
+    rent.end_at = _dt(body.end_at)
+    if 'tel' in body:
+        rent.tel = body.tel
+    else:
+        rent.tel = g.user.tel
+
+    if 'first_name' in body and 'last_name' in body:
+        rent.first_name = body.first_name
+        rent.last_name = body.last_name
+    elif 'first_name' in body:
+        rent.first_name = body.first_name
+    elif 'last_name' in body:
+        rent.last_name = body.last_name
+    else:
+
+        names = (g.user.name or '_').split(' ')
+
+        if len(names) == 0:
+            default_first_name = None
+            default_last_name = None
+        elif len(names) == 1:
+            default_first_name = names[0]
+            default_last_name = None
+        else:
+            default_first_name = names[1]
+            default_last_name = names[0]
+
+        rent.first_name = default_first_name
+        rent.last_name = default_last_name
+
+    for renter_info in body.renters:
+        room_renter = RoomRenter()
+        room_renter.rent = rent
+        room_renter.children_count = renter_info['children_count']
+        room_renter.grown_ups_count = renter_info['grown_ups_count']
+        db.session.add(room_renter)
+
+    db.session.add(Rent)
+    db.session.commit()
+
+    return make_response(
+        data={
+            'id': rent.pk,
+            'first_name': rent.first_name,
+            'last_name': rent.last_name,
+            'tel': rent.tel,
+            'comment': rent.comment,
+            'start_at': _unix(rent.start_at),
+            'end_at': _unix(rent.end_at)
+        }
+    )
+
+
+@app.route('/lessors/me/rents/', methods=['GET'])
+@auth(user_types=[UserType.lessor])
+@for_request(
+    allowed_content_types=json_mt,
+    body_fields=schemas.rent_room()
+)
+def get_rents():
+
+    now = datetime.utcnow()
+
+    rentals = {
+        'new': [],
+        'wait': [],
+        'in_process': []
+    }
+
+    for rental in (db.session.query(Rent)
+            .join(Room)
+            .filter(Room.user == g.user, Rent.end_at >= now, Rent.verified != False)
+            .all()
+    ):
+
+        rental_dict = {
+            'id': rental.pk,
+            'start_at': rental.start_at,
+            'end_at': rental.end_at,
+            'first_name': rental.first_name,
+            'last_name': rental.last_name,
+            'verified': rental.verified,
+            'room': {
+                'id': rental.room.pk,
+                'name': rental.room.name,
+                'attachments': [
+                    attachment.link for attachment in rental.room.attachments
+                ]
+            },
+            'renters': [
+                {
+                    'grown_ups_count': renter.grown_count,
+                    'children_count': renter.children_count
+                }
+                for renter in rental.renters
+            ]
+        }
+
+        if rental.verified is None and rental.start_at >= now:
+            rentals['new'].append(rental_dict)
+        if rental.verified and rental.start_at >= now:
+            rentals['wait'].append(rental_dict)
+        if rental.verified and rental.start_at < now:
+            rentals['in_process'].append(rental_dict)
+
+    return make_response(data=rentals)
+
+
+@app.route('/rents/<rent_id>', methods=['GET'])
+@auth(user_types=[UserType.lessor])
+@for_request(
+    allowed_content_types=json_mt,
+    body_fields=schemas.rent_room()
+)
+def edit_rent(rent_id):
+    rent = Rent.query.get(rent_id)
+    if rent is None:
+        return make_response(
+            status=404,
+            errors=[
+                {
+                    'code': 1,
+                    'message': 'Entity not found',
+                    'source': 'pk',
+                    'path': '$.url',
+                    'additional': None
+                }
+            ],
+            description='Аренда не найдена'
+        )
+
+    rent.verified = g.rreceived.body.verified
+    rent.commit()
+    
+    return make_response(
+        data={
+            'id': rent.pk,
+            'start_at': rent.start_at,
+            'end_at': rent.end_at,
+            'first_name': rent.first_name,
+            'last_name': rent.last_name,
+            'verified': rent.verified,
+            'room': {
+                'id': rent.room.pk,
+                'name': rent.room.name,
+                'attachments': [
+                    attachment.link for attachment in rent.room.attachments
+                ]
+            },
+            'renters': [
+                {
+                    'grown_ups_count': renter.grown_count,
+                    'children_count': renter.children_count
+                }
+                for renter in rent.renters
             ]
         }
     )
