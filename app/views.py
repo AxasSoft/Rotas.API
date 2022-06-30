@@ -2,7 +2,7 @@ import json
 import os
 import random
 import re
-from datetime import datetime, timedelta,time
+from datetime import datetime, timedelta, time
 from pathlib import Path
 from time import sleep
 from typing import Optional, List
@@ -15,7 +15,7 @@ from greensms.client import GreenSMS
 
 from app import app, schemas, request_validator, db
 from app.models import Token, TokenPair, Device, User, Notification, Code, UserType, Attachment, Room, RoomAmenity, \
-    Amenity, Rent, RoomRenter
+    Amenity, Rent, RoomRenter, Review
 from utils.auth import auth
 from utils.auth import gen_token
 from utils.helpers import make_response
@@ -97,7 +97,6 @@ def _update_settings(user, firebase_device_id, enable_notification, user_agent):
 
 
 def _delete_user(user):
-
     for device in Device.query.filter(Device.user == user):
         db.session.delete(device)
 
@@ -119,7 +118,6 @@ def _delete_user(user):
 
 
 def _get_user(user: User):
-
     return {
         'id': user.pk,
         'tel': user.tel,
@@ -280,7 +278,6 @@ def siw_tel():
     user = User.query.filter(User.tel == tel).order_by(User.pk).first()
 
     if user is None:
-
         user = User()
         user.tel = tel
         user.commit()
@@ -574,7 +571,6 @@ def edit_profile():
     body_fields=schemas.edit_profile_avatar()
 )
 def edit_profile_avatar():
-
     today = datetime.today()
     year = today.year
     month = today.month
@@ -611,7 +607,6 @@ def delete_user():
     body_fields=schemas.upload_attachment()
 )
 def upload_attachment():
-
     today = datetime.today()
     year = today.year
     month = today.month
@@ -784,12 +779,7 @@ def rent_room(room_id):
 
 @app.route('/lessors/me/rents/', methods=['GET'])
 @auth(user_types=[UserType.lessor])
-@for_request(
-    allowed_content_types=json_mt,
-    body_fields=schemas.rent_room()
-)
 def get_rents():
-
     now = datetime.utcnow()
 
     rentals = {
@@ -837,7 +827,7 @@ def get_rents():
     return make_response(data=rentals)
 
 
-@app.route('/rents/<rent_id>', methods=['GET'])
+@app.route('/rents/<rent_id>/', methods=['GET'])
 @auth(user_types=[UserType.lessor])
 @for_request(
     allowed_content_types=json_mt,
@@ -862,7 +852,7 @@ def edit_rent(rent_id):
 
     rent.verified = g.rreceived.body.verified
     rent.commit()
-    
+
     return make_response(
         data={
             'id': rent.pk,
@@ -884,6 +874,174 @@ def edit_rent(rent_id):
                     'children_count': renter.children_count
                 }
                 for renter in rent.renters
+            ]
+        }
+    )
+
+
+@app.route('/lessors/me/rents/history/', methods=['GET'])
+@auth(user_types=[UserType.lessor])
+def get_lessor_rent_history():
+    now = datetime.utcnow()
+    data = []
+    for rental in (db.session.query(Rent)
+            .join(Room)
+            .filter(Room.user == g.user, Rent.end_at < now, Rent.verified == True)
+            .all()
+    ):
+        data.append(
+            {
+                'id': rental.pk,
+                'start_at': rental.start_at,
+                'end_at': rental.end_at,
+                'first_name': rental.first_name,
+                'last_name': rental.last_name,
+                'verified': rental.verified,
+                'room': {
+                    'id': rental.room.pk,
+                    'name': rental.room.name,
+                    'attachments': [
+                        attachment.link for attachment in rental.room.attachments
+                    ]
+                },
+                'renters': [
+                    {
+                        'grown_ups_count': renter.grown_count,
+                        'children_count': renter.children_count
+                    }
+                    for renter in rental.renters
+                ]
+            }
+        )
+
+
+@app.route('/rents/<int:rent_id>/reviews/')
+@auth(user_types=[UserType.lessor, UserType.renter])
+@for_request(
+    allowed_content_types=json_mt,
+    body_fields=schemas.review_rent()
+)
+def review_rent(rent_id):
+    rent = Rent.query.get(rent_id)
+    if rent is None:
+        return make_response(
+            status=404,
+            errors=[
+                {
+                    'code': 1,
+                    'message': 'Entity not found',
+                    'source': 'pk',
+                    'path': '$.url',
+                    'additional': None
+                }
+            ],
+            description='Аренда не найдена'
+        )
+
+    body = g.received.body
+    review = Review()
+    review.rate = body.rate
+    review.text = body.text
+    review.rent = rent
+    review.user = g.user
+    review.commit()
+
+    return make_response(
+        data={
+            'id': review.id,
+            'rate': review.rate,
+            'text': review.text
+        }
+    )
+
+
+@app.route('/renters/me/rooms/', methods=['GET'])
+@auth(user_types=[UserType.renter])
+def get_rooms():
+    return make_response(
+        data=[
+            {
+                'id': room.id,
+                'name': room.name,
+                'address': room.address,
+                'attachments': [
+                    attachment.link for attachment in room.attachments
+                ],
+                'amenities': [
+                    {
+                        'id': ra.amenity.id,
+                        'name': ra.amenity.name,
+                        'icon': ra.amenity.icon
+                    }
+                    for ra in room.room_amenities
+                ],
+                'rating': (
+                    db.session
+                        .query(func.avg(Review.rate))
+                        .join(Rent).filter(Review.rate != None, Rent.room == room)
+                        .scalar()
+                )
+            }
+            for room in db.session.query(Room)
+        ]
+    )
+
+
+@app.route('/rooms/<int:room_id>/', methods=['GET'])
+@auth(user_types=[UserType.renter])
+def get_room(room_id):
+    room = Room.query.get(room_id)
+    if room is None:
+        return make_response(
+            status=404,
+            errors=[
+                {
+                    'code': 1,
+                    'message': 'Entity not found',
+                    'source': 'pk',
+                    'path': '$.url',
+                    'additional': None
+                }
+            ],
+            description='Комната не найдена'
+        )
+
+    return make_response(
+        data={
+            'id': room.id,
+            'name': room.name,
+            'address': room.address,
+            'description': room.description,
+
+            'attachments': [
+                attachment.link for attachment in room.attachments
+            ],
+            'amenities': [
+                {
+                    'id': ra.amenity.id,
+                    'name': ra.amenity.name,
+                    'icon': ra.amenity.icon
+                }
+                for ra in room.room_amenities
+            ],
+            'rating': (
+                db.session
+                    .query(func.avg(Review.rate))
+                    .join(Rent).filter(Review.rate != None, Rent.room == room)
+                    .scalar()
+            ),
+            'reviews': [
+                {
+                    'id': review.pk,
+                    'text': review.text,
+                    'rate': review.rate,
+                    'user': {
+                        'id': review.user.pk,
+                        'name': review,
+                        'rent': _unix(review.created)
+                    }
+                }
+                for review in db.session.query(Review).join(Rent).filter(Rent.room == room)
             ]
         }
     )

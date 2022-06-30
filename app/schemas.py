@@ -550,3 +550,12 @@ def edit_rent():
             'verified': _bool()
         }
     )
+
+
+def review_rent():
+    return _obj(
+        required_properties={
+            'rate': _nullable(_int(minimum=0, maximum=5)),
+            'text': _nullable(_str())
+        }
+    )

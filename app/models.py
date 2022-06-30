@@ -131,6 +131,7 @@ class User(db.Model, DeleteMixin, CommitMixin, HistoryMixin, UtcCreatedMixin):
     notifications = db.relationship('Notification', back_populates='user')
     reviews = db.relationship('Review', back_populates='user', cascade="all, delete-orphan")
     rooms = db.relationship('Room', back_populates='user', cascade="all, delete-orphan")
+    saved_rooms = db.relationship('SavedRoom', back_populates='user', cascade="all, delete-orphan", lazy='dynamic')
     block_lists_subject = db.relationship('BlockList', back_populates='subject', cascade="all, delete-orphan",
                                           foreign_keys='[BlockList.subject_id]')
     block_lists_object = db.relationship('BlockList', back_populates='object_', cascade="all, delete-orphan",
@@ -271,6 +272,7 @@ class Room(db.Model, SyntheticKeyMixin, DeleteMixin, CommitMixin, HistoryMixin, 
     room_amenities = db.relationship('RoomAmenity', back_populates='room', cascade="all, delete-orphan")
     attachments = db.relationship('Attachment', back_populates='room', cascade="all, delete-orphan")
     rents = db.relationship('Rent', back_populates='room', cascade="all, delete-orphan", lazy='dynamic')
+    saved_rooms = db.relationship('SavedRoom', back_populates='room', cascade="all, delete-orphan", lazy='dynamic')
 
 
 class RoomAmenity(db.Model, SyntheticKeyMixin, DeleteMixin, CommitMixin, HistoryMixin, UtcCreatedMixin):
@@ -356,3 +358,19 @@ class Review(db.Model, SyntheticKeyMixin, DeleteMixin, CommitMixin, HistoryMixin
 
     user = db.relationship(User, back_populates='reviews')
     rent = db.relationship(Rent, back_populates='reviews')
+
+
+class SavedRoom(db.Model, SyntheticKeyMixin, DeleteMixin, CommitMixin, HistoryMixin, UtcCreatedMixin):
+    __tablename__ = 'saved_rooms'
+
+    class Meta:
+        enable_in_sai = True
+        column_searchable_list = []
+        column_filters = []
+
+    user_id = db.Column(db.Integer, db.ForeignKey(User.pk), nullable=False)
+    room_id = db.Column(db.Integer, db.ForeignKey(Room.pk), nullable=False)
+    user = db.relationship(User, back_populates='saved_rooms')
+    rent = db.relationship(Room, back_populates='saved_rooms')
+
+
