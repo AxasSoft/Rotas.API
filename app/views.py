@@ -15,7 +15,7 @@ from greensms.client import GreenSMS
 
 from app import app, schemas, request_validator, db
 from app.models import Token, TokenPair, Device, User, Notification, Code, UserType, Attachment, Room, RoomAmenity, \
-    Amenity, Rent, RoomRenter, Review
+    Amenity, Rent, RoomRenter, Review, SavedRoom, BlockList
 from utils.auth import auth
 from utils.auth import gen_token
 from utils.helpers import make_response
@@ -982,7 +982,11 @@ def get_rooms():
                         .scalar()
                 )
             }
-            for room in db.session.query(Room)
+            for room in (
+                db.session.query(Room)
+                    .join(BlockList)
+                    .filter(BlockList.subject != g.user, BlockList.object_ != g.user)
+            )
         ]
     )
 
@@ -1045,3 +1049,109 @@ def get_room(room_id):
             ]
         }
     )
+
+
+@app.route('/rooms/<int:room_id>/is_saved/', methods=['PUT'])
+@auth(user_types=[UserType.renter])
+@for_request(
+    allowed_content_types=json_mt,
+    body_fields=schemas.change_is_saved_mark()
+)
+def change_is_saved_mark(room_id):
+    room = Room.query.get(room_id)
+    if room is None:
+        return make_response(
+            status=404,
+            errors=[
+                {
+                    'code': 1,
+                    'message': 'Entity not found',
+                    'source': 'pk',
+                    'path': '$.url',
+                    'additional': None
+                }
+            ],
+            description='Комната не найдена'
+        )
+
+    saved_room = db.session.query(SavedRoom).filter(SavedRoom.user == g.user, SavedRoom.room == room).first()
+    if saved_room is not None and not g.received.body.is_saved:
+        saved_room.delete()
+    elif saved_room is None and g.received.body.is_saved:
+        saved_room = SavedRoom()
+        saved_room.user = g.user
+        saved_room.room = room
+        saved_room.commit()
+
+    return make_response()
+
+
+@app.route('/rooms/<int:room_id>/is_saved/', methods=['GET'])
+@auth(user_types=[UserType.renter])
+def get_saved_rooms():
+    return make_response(
+        data=[
+            {
+                'id': room.id,
+                'name': room.name,
+                'address': room.address,
+                'attachments': [
+                    attachment.link for attachment in room.attachments
+                ],
+                'amenities': [
+                    {
+                        'id': ra.amenity.id,
+                        'name': ra.amenity.name,
+                        'icon': ra.amenity.icon
+                    }
+                    for ra in room.room_amenities
+                ],
+                'rating': (
+                    db.session
+                        .query(func.avg(Review.rate))
+                        .join(Rent).filter(Review.rate != None, Rent.room == room)
+                        .scalar()
+                )
+            }
+            for room in db.session.query(Room).join(SavedRoom).filter(SavedRoom.user == g.user)
+        ]
+    )
+
+
+@app.route('/block-list/')
+@auth(user_types=[UserType.renter, UserType.lessor])
+def get_block_list():
+    return make_response(
+        data=[
+            {
+                'id': user.id,
+                'name': user.name,
+                'tel': user.tel,
+                'avatar': user.avatar
+            }
+            for user in db.session.query(User).join(BlockList.subject == g.user)
+        ]
+    )
+
+
+@app.route('/users/<int:user_id>/in-block-list/')
+@auth()
+@for_request(
+    allowed_content_types=json_mt,
+    body_fields=schemas.change_in_block_list_mark()
+)
+def change_in_block_list_mark(user_id):
+    user = db.session.query(User).get(user_id)
+
+    in_block_list_mark = g.received.body.in_block_list
+    block_list = db.session.query(BlockList).filter(BlockList.subject == g.user, BlockList.object_ == user)
+
+    if in_block_list_mark and block_list is None:
+        block_list = BlockList()
+        block_list.subject = g.user
+        block_list.object_ = user
+        block_list.commit()
+    if not in_block_list_mark and block_list is not None:
+        block_list.delete()
+
+    return make_response()

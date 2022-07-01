@@ -559,3 +559,18 @@ def review_rent():
             'text': _nullable(_str())
         }
     )
+
+def change_is_saved_mark():
+    return _obj(
+        required_properties={
+            'is_saved': _bool()
+        }
+    )
+
+
+def change_in_block_list_mark():
+    return _obj(
+        required_properties={
+            'in_block_list': _bool()
+        }
+    )

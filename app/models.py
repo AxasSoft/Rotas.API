@@ -371,6 +371,6 @@ class SavedRoom(db.Model, SyntheticKeyMixin, DeleteMixin, CommitMixin, HistoryMi
     user_id = db.Column(db.Integer, db.ForeignKey(User.pk), nullable=False)
     room_id = db.Column(db.Integer, db.ForeignKey(Room.pk), nullable=False)
     user = db.relationship(User, back_populates='saved_rooms')
-    rent = db.relationship(Room, back_populates='saved_rooms')
+    room = db.relationship(Room, back_populates='saved_rooms')
 
 
